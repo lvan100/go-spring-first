@@ -1,0 +1,166 @@
+请在当前目录生成一套介绍 Go-Spring 核心用法的 Markdown 文档和配套示例代码。
+
+## 资料与代码依据
+
+- Go-Spring 使用说明参考：
+  `/Users/didi/Go-Spring/go-spring/docs/2.guides`
+- `spring-core` 必须使用本地目录：
+  `/Users/didi/Go-Spring/spring-core`
+- 示例代码中的 `github.com/go-spring/spring-core` 必须通过 `replace` 指向上述本地目录，不能使用远程版本。
+- API 名称、行为和包路径以本地 `spring-core` 源码为准；如果历史文档和源码不一致，以源码为准。
+  - 例如配置入口应使用 `gs.Configure()`。
+  - HTTP mux 包装类型以源码中的实际类型为准，例如 `gs.HttpServeMux`。
+
+## 交付物
+
+在当前目录下生成：
+
+1. `README.md`
+   - Markdown 格式。
+   - 面向第一次接触 Go-Spring 的 Go 开发者。
+   - 递进式讲解：从最小启动代码开始，逐步加入 HTTP、配置、IoC、条件化、日志和测试。
+   - 每个小节都要包含：
+     - 本节目标。
+     - 完整示例所在目录。
+     - 核心代码说明。
+     - 运行方式。
+     - 预期结果。
+     - 与上一节相比新增了什么能力。
+
+2. `examples/`
+   - 每个示例必须保存在单独目录下。
+   - 每个示例必须是完整、可独立阅读的 Go 代码。
+   - 每个示例目录至少包含 `go.mod` 和必要的源码、配置、测试文件。
+   - 示例目录命名建议使用编号前缀，保证阅读顺序清晰，例如：
+     - `examples/01-run-only`
+     - `examples/02-stdlib-http`
+     - `examples/03-configure-root-bean`
+     - 依次类推。
+
+## 文档结构与示例要求
+
+请按以下顺序编写文档和示例，后一个示例建立在前一个示例的概念基础上。
+
+### 1. 只调用 `gs.Run()`
+
+- 代码中只包含最小必要结构，业务代码只调用 `gs.Run()`，不要注册 Bean、HTTP handler 或配置。
+- 文档说明 `gs.Run()` 背后做了什么：
+  - 打印 banner。
+  - 加载配置。
+  - 初始化日志。
+  - 启动 IoC 容器。
+  - 启动内置 HTTP Server。
+  - 监听退出信号并优雅关闭。
+- 结尾说明运行方式和预期结果。
+
+### 2. 增加标准库 `http.HandleFunc`
+
+- 在上一节基础上，增加标准库 `http.HandleFunc`。
+- 展示 Go-Spring 与 Go 标准库 HTTP 生态的兼容方式。
+- 说明默认 `http.DefaultServeMux` 如何被 Go-Spring 内置 HTTP Server 使用。
+- 结尾说明运行方式、访问路径和预期响应。
+
+### 3. 使用 `gs.Configure()` 注册 root bean
+
+- 在上一节基础上，增加 `gs.Configure()` 的用法。
+- 通过 `app.Root()` 注册一个 root bean。
+- root bean 的定义中必须包含带 `value` tag 的配置字段。
+- `value` tag 必须同时展示：
+  - 配置 key。
+  - 默认值。
+  - 校验规则，例如 `expr` tag。
+- 该 root bean 必须被 `http.HandleFunc` 的处理代码使用。
+- 结尾说明运行方式、访问路径和预期响应。
+
+### 4. 使用配置文件、环境变量和命令行参数覆盖配置
+
+- 在上一节基础上，增加配置文件。
+- 使用配置文件覆盖 root bean 中的属性。
+- 说明 Go-Spring 默认从 `./conf/app.*` 加载配置。
+- 同时演示：
+  - 配置文件覆盖默认值。
+  - `GS_` 环境变量覆盖配置。
+  - `-Dkey=value` 命令行参数覆盖配置。
+- 结尾说明不同覆盖方式的运行命令和预期结果。
+
+### 5. 使用 HTTP 中间件和 `gs.HttpServeMux`
+
+- 在上一节基础上，改为使用 `gs.HttpServeMux` 封装 HTTP handler。
+- 增加至少一个 HTTP 中间件，例如：
+  - 请求日志。
+  - 请求耗时。
+  - 请求 ID。
+  - panic recovery。
+- 可以使用构造函数注入替换前面直接注册 root bean 的方式。
+- 说明为什么此时需要显式提供 `gs.HttpServeMux`。
+- 结尾说明运行方式、访问路径、响应 header 或日志效果。
+
+### 6. 多个 bean 的依赖注入
+
+- 在上一节基础上，将单个 bean 拆分为：
+  - controller。
+  - service。
+- controller 依赖 service。
+- controller 保留原来的 HTTP 配置字段。
+- 展示构造函数注入或字段注入，优先使用构造函数注入。
+- 结尾说明运行方式、访问路径和预期响应。
+
+### 7. 使用 `gs.Provide` 注册 Redis 单客户端
+
+- 在上一节基础上，使用 `gs.Provide` 注册一个 Redis 单客户端。
+- service 中注入 Redis 客户端。
+- Redis 客户端实现应尽量贴近真实 starter 用法；如果为了示例可运行性需要简化，必须在文档中说明。
+- 示例应说明运行前是否需要本地 Redis，以及没有 Redis 时会看到什么结果。
+- 结尾说明运行方式、访问路径和预期响应。
+
+### 8. 条件化启用与多实例客户端
+
+- 在上一节基础上，介绍条件化启用能力。
+- 参考 `/Users/didi/Go-Spring/starter-go-redis` 的实现思路。
+- 必须包含：
+  - 一个使用 `gs.Provide` 注册的单例 client。
+  - 一个使用 `gs.Group` 注册的多实例 client。
+  - 条件化启用逻辑，例如 `gs.OnProperty(...)`。
+- 文档说明配置项存在、不存在、取不同值时 Bean 是否生效。
+- 结尾说明运行方式、配置方式和预期结果。
+
+### 9. 日志系统
+
+- 在上一节基础上，介绍 Go-Spring 日志系统。
+- 必须展示：
+  - 标签注册。
+  - 标签路由。
+  - 结构化日志输出。
+  - 日志配置。
+- 示例中要有业务日志和 HTTP 请求相关日志。
+- 结尾说明运行方式、访问路径和预期日志输出。
+
+### 10. 单元测试
+
+- 在上一节基础上，介绍测试。
+- 必须包含：
+  - 纯单元测试。
+  - IoC 容器相关测试。
+  - 断言。
+  - mock 或 fake。
+- 测试示例应能体现 service/controller 的可测试性。
+- 结尾说明运行测试的命令和预期结果。
+
+## 示例代码质量要求
+
+- 示例代码优先保持短小，但必须完整。
+- 目录之间可以复制必要代码，保证每个示例可独立阅读。
+- 不要只给代码片段；每个示例目录必须能独立运行或独立测试。
+- 代码中只添加必要注释，避免把文档内容重复写进代码。
+- 配置 key 命名要保持一致，优先使用文档中的同一套业务主题。
+- Redis、日志和测试示例如果依赖额外组件，必须在文档中说明前置条件和替代运行方式。
+
+## 验证要求
+
+完成后请尽量执行以下检查：
+
+1. 确认所有示例目录都包含 `go.mod`，且 `replace github.com/go-spring/spring-core => /Users/didi/Go-Spring/spring-core`。
+2. 对不依赖外部服务的示例执行 `go test ./...` 或至少 `go test`。
+3. 对可启动示例执行一次 `go run .` 的静态/编译检查；如果会阻塞运行，使用合适方式验证能启动后停止。
+4. 对依赖 Redis 的示例，若本机没有 Redis，至少保证代码能编译，并在文档中说明运行 Redis 后的预期结果。
+5. 最终回复中说明生成了哪些文件、执行过哪些验证、哪些验证因外部依赖未执行。
