@@ -2,10 +2,8 @@
 
 ## 资料与代码依据
 
-- Go-Spring 使用说明参考：
-  `/Users/didi/Go-Spring/go-spring/docs/2.guides`
-- `spring-core` 必须使用本地目录：
-  `/Users/didi/Go-Spring/spring-core`
+- Go-Spring 使用说明参考：`~/Go-Spring/go-spring/docs/2.guides`
+- `spring-core` 必须使用本地目录：`~/Go-Spring/spring-core`
 - 示例代码中的 `github.com/go-spring/spring-core` 必须通过 `replace` 指向上述本地目录，不能使用远程版本。
 - API 名称、行为和包路径以本地 `spring-core` 源码为准；如果历史文档和源码不一致，以源码为准。
   - 例如配置入口应使用 `gs.Configure()`。
@@ -116,7 +114,7 @@
 ### 8. 条件化启用与多实例客户端
 
 - 在上一节基础上，介绍条件化启用能力。
-- 参考 `/Users/didi/Go-Spring/starter-go-redis` 的实现思路。
+- 参考 `~/Go-Spring/starter-go-redis` 的实现思路。
 - 必须包含：
   - 一个使用 `gs.Provide` 注册的单例 client。
   - 一个使用 `gs.Group` 注册的多实例 client。
@@ -159,7 +157,7 @@
 
 完成后请尽量执行以下检查：
 
-1. 确认所有示例目录都包含 `go.mod`，且 `replace github.com/go-spring/spring-core => /Users/didi/Go-Spring/spring-core`。
+1. 确认所有示例目录都包含 `go.mod`，且 `replace github.com/go-spring/spring-core => ~/Go-Spring/spring-core`。
 2. 对不依赖外部服务的示例执行 `go test ./...` 或至少 `go test`。
 3. 对可启动示例执行一次 `go run .` 的静态/编译检查；如果会阻塞运行，使用合适方式验证能启动后停止。
 4. 对依赖 Redis 的示例，若本机没有 Redis，至少保证代码能编译，并在文档中说明运行 Redis 后的预期结果。

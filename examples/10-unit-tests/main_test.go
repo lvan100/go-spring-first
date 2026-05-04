@@ -26,7 +26,7 @@ func TestGreetingServiceWithFakeRedis(t *testing.T) {
 	service := &GreetingService{redis: redis, Greeting: "Hi"}
 
 	got := service.Message(context.Background(), "tester")
-	if got != "Hi, tester! redis=PONG" {
+	if got != "Hi, tester!" {
 		t.Fatalf("unexpected greeting: %q", got)
 	}
 	if redis.calls != 1 {
@@ -35,11 +35,15 @@ func TestGreetingServiceWithFakeRedis(t *testing.T) {
 }
 
 func TestGreetingServiceDegradedResponse(t *testing.T) {
-	service := &GreetingService{redis: &fakeRedis{err: errors.New("redis down")}, Greeting: "Hi"}
+	redis := &fakeRedis{err: errors.New("redis down")}
+	service := &GreetingService{redis: redis, Greeting: "Hi"}
 
 	got := service.Message(context.Background(), "tester")
-	if !strings.Contains(got, "redis unavailable") {
-		t.Fatalf("expected degraded response, got %q", got)
+	if got != "Hi, tester!" {
+		t.Fatalf("unexpected greeting: %q", got)
+	}
+	if redis.calls != 1 {
+		t.Fatalf("expected one redis ping, got %d", redis.calls)
 	}
 }
 
@@ -54,7 +58,7 @@ func TestControllerWithFakeRedis(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d", rec.Code)
 	}
-	if strings.TrimSpace(rec.Body.String()) != "Hi, controller! redis=PONG" {
+	if strings.TrimSpace(rec.Body.String()) != "Hi, controller!" {
 		t.Fatalf("unexpected body: %q", rec.Body.String())
 	}
 }
@@ -62,6 +66,7 @@ func TestControllerWithFakeRedis(t *testing.T) {
 func TestIoCContainerWithFakeRedis(t *testing.T) {
 	gs.Web(false).Configure(func(app gs.App) {
 		app.Property("spring.app.config.dir", "./testdata/empty-conf")
+		// The built-in Redis client is not enabled
 		app.Provide(&fakeRedis{}).Export(gs.As[RedisPinger]())
 	}).RunTest(t, func(ts *struct {
 		Service    *GreetingService `autowire:""`
@@ -74,7 +79,7 @@ func TestIoCContainerWithFakeRedis(t *testing.T) {
 			t.Fatal("controller was not injected")
 		}
 		got := ts.Service.Message(context.Background(), "ioc")
-		if got != "Hello, ioc! redis=PONG" {
+		if got != "Hello, ioc!" {
 			t.Fatalf("unexpected ioc greeting: %q", got)
 		}
 	})

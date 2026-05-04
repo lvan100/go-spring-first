@@ -1,22 +1,17 @@
 # Go-Spring 核心用法入门
 
-这套文档和示例面向第一次接触 Go-Spring 的 Go 开发者。示例按阅读顺序放在 `examples/` 下，每个目录都是独立 Go module，并且都通过 `replace` 使用本机源码：
+[English](README.en.md) | [中文](README.md)
 
-```go
-replace github.com/go-spring/spring-core => /Users/didi/Go-Spring/spring-core
-```
+这是一份按步骤展开的说明文档。咱们从一个只能启动的空应用开始，每一步只增加一个能力：
+先让 HTTP 路由工作起来，再把对象交给容器管理，
+然后继续加入配置、依赖注入、外部客户端、条件注册、结构化日志，最后再到测试。
+每一步都可以单独运行，对应的完整代码放在 [examples](examples) 目录中。
 
-建议始终进入示例目录运行命令，因为 Go-Spring 默认从当前工作目录的 `./conf/app.*` 加载配置。
+## 1. 启动一个最小 Go-Spring 应用
 
-如果本地 `spring-core` 的生成 mock 代码在 `go run` 时提示 `Mockey check failed`，可以临时加上 `MOCKEY_CHECK_GCFLAGS=false` 运行；该提示来自本地依赖的运行时检查，不影响本套示例的 Go-Spring 用法。
+第一步咱们先不写业务代码，只来确认 Go-Spring 应用怎么启动。
 
-## 1. 只调用 `gs.Run()`
-
-**本节目标**：认识 Go-Spring 应用的最小启动入口。
-
-**完整示例所在目录**：`examples/01-run-only`
-
-**核心代码说明**：
+代码如下：
 
 ```go
 func main() {
@@ -24,60 +19,98 @@ func main() {
 }
 ```
 
-`gs.Run()` 会创建应用并阻塞运行。启动过程中会打印 banner、加载配置、初始化日志、启动 IoC 容器、启动内置 HTTP Server，并监听 `SIGINT` / `SIGTERM` 做优雅关闭。
+> 完整代码在 [examples/01-run-only/main.go](examples/01-run-only/main.go)。
 
-**运行方式**：
+上面这段代码虽然看起来很短，但是已经足够让程序进入 Go-Spring 的应用生命周期。
+`gs.Run()` 会创建应用，加载配置，初始化日志，刷新 IoC 容器，启动内置 HTTP Server，
+并监听 `SIGINT` / `SIGTERM`，最后在进程退出时还能执行优雅关闭。
+
+使用下面的命令运行示例：
 
 ```bash
 cd examples/01-run-only
 go run .
 ```
 
-**预期结果**：控制台出现 Go-Spring banner，应用监听默认 HTTP 地址 `:9090`，按 `Ctrl+C` 后退出。
+此时控制台会打印如下信息：
 
-**与上一节相比新增了什么能力**：这是起点，只有应用生命周期，没有业务逻辑。
+```text
+   ____    ___            ____    ____    ____    ___   _   _    ____ 
+  / ___|  / _ \          / ___|  |  _ \  |  _ \  |_ _| | \ | |  / ___|
+ | |  _  | | | |  _____  \___ \  | |_) | | |_) |  | |  |  \| | | |  _ 
+ | |_| | | |_| | |_____|  ___) | |  __/  |  _ <   | |  | |\  | | |_| |
+  \____|  \___/          |____/  |_|     |_| \_\ |___| |_| \_|  \____| 
 
-## 2. 增加标准库 `http.HandleFunc`
+            go-spring@v1.3.0  https://github.com/go-spring/
 
-**本节目标**：验证 Go-Spring 和 Go 标准库 HTTP 生态兼容。
-
-**完整示例所在目录**：`examples/02-stdlib-http`
-
-**核心代码说明**：
-
-```go
-http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
-	_, _ = w.Write([]byte("hello from net/http\n"))
-})
-
-gs.Run()
+[INFO][2026-05-02T19:13:07.837][...ing/spring-core/gs/internal/gs_app/app.go:289] _app_def||msg=ready to serve requests
 ```
 
-Go-Spring 内置 HTTP Server 默认会把 `http.DefaultServeMux` 包装成 `*gs.HttpServeMux`，所以标准库的 `http.HandleFunc` 会直接生效。
+`ready to serve requests` 表示应用已经启动，并且成功监听 `:9090`。
+使用下面的命令访问根路径：
 
-**运行方式**：
+```bash
+curl http://127.0.0.1:9090/
+```
+
+会得到：
+
+```text
+404 page not found
+```
+
+这里 404 是预期结果。它说明 HTTP Server 已经启动了，只是还没有 handler 能处理这个路径。
+按下 `Ctrl+C` 可以停止程序，接着 Go-Spring 进入关闭流程。
+
+## 2. 添加一个标准库 HTTP 路由
+
+上一章的应用已经能够启动，但是还没有业务入口，所以任何请求都会返回 404。
+现在咱们先不着急引入 IoC，而是用 Go 标准库注册一个最普通的 HTTP handler。
+
+代码如下：
+
+```go
+func main() {
+	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("hello from net/http\n"))
+	})
+
+	gs.Run()
+}
+```
+
+> 完整代码在 [examples/02-stdlib-http/main.go](examples/02-stdlib-http/main.go)。
+
+使用下面的命令运行示例：
 
 ```bash
 cd examples/02-stdlib-http
 go run .
+```
+
+然后访问新增的 `/hello` 路由：
+
+```bash
 curl http://127.0.0.1:9090/hello
 ```
 
-**预期结果**：
+这次不再是 404 了，而是返回预期中的响应：
 
 ```text
 hello from net/http
 ```
 
-**与上一节相比新增了什么能力**：应用可以直接暴露标准库 HTTP 路由。
+可以看到，应用已经从“只能启动”变成了“能处理 HTTP 请求”。
+不过 handler 目前还是一个匿名函数，业务状态和配置都写不进去。
 
-## 3. 使用 `gs.Configure()` 注册 root bean
+## 3. 把业务对象注册为 root bean
 
-**本节目标**：使用 `gs.Configure()` 和 `app.Root()` 把已有对象纳入 IoC 容器，并绑定配置。
+在上一章中，`/hello` 是直接写在 `main` 函数里的匿名函数。
+它能验证 HTTP 处理有效，但不好继续扩展。
+因为一旦问候语、目标用户、校验规则需要变成配置，匿名函数就会显得很别扭。
+所以本章会创建一个业务对象 `GreetingRoot`，让它持有配置，并且把它的方法实现成 handler。
 
-**完整示例所在目录**：`examples/03-configure-root-bean`
-
-**核心代码说明**：
+代码如下：
 
 ```go
 type GreetingRoot struct {
@@ -85,39 +118,59 @@ type GreetingRoot struct {
 	Audience string `value:"${demo.audience:=Go-Spring}" expr:"$ != ''"`
 }
 
-root := &GreetingRoot{}
-http.HandleFunc("/hello", root.Hello)
+func (g *GreetingRoot) Hello(w http.ResponseWriter, r *http.Request) {
+	_, _ = fmt.Fprintf(w, "%s, %s!\n", g.Greeting, g.Audience)
+}
 
-gs.Configure(func(app gs.App) {
-	app.Root(root)
-}).Run()
+func main() {
+	root := &GreetingRoot{}
+	http.HandleFunc("/hello", root.Hello)
+
+	gs.Configure(func(app gs.App) {
+		app.Root(root)
+	}).Run()
+}
 ```
 
-`value` tag 同时展示了配置 key 和默认值，`expr` tag 在启动期校验配置。`app.Root(root)` 会触发 root bean 的配置绑定，HTTP handler 使用同一个 `root` 指针。
+> 完整代码在 [examples/03-configure-root-bean/main.go](examples/03-configure-root-bean/main.go)。
 
-**运行方式**：
+与上一章相比，这次的代码有两个实质性变化：
+- handler 不再是匿名函数，而是 `GreetingRoot.Hello` 方法，业务状态进入了结构体。
+- `root` 被传给了 `app.Root(root)`，所以 Go-Spring 会在启动过程中处理它的字段标签。
+
+GreetingRoot 字段上的 `value` tag 表示配置绑定关系：
+- `${demo.greeting:=Hello}` 表示读取配置项 `demo.greeting` 的值，如果没有在任何地方配置，就使用默认值 `Hello`。
+- `expr:"$ != ''"` 表示绑定后的值不能为空，如果不满足条件，应用就会在启动阶段失败，而不是等到请求进来才暴露问题。
+
+使用下面的命令运行示例：
 
 ```bash
 cd examples/03-configure-root-bean
 go run .
+```
+
+然后访问 `/hello` 路由：
+
+```bash
 curl http://127.0.0.1:9090/hello
 ```
 
-**预期结果**：
+我们会得到预期中的响应：
 
 ```text
 Hello, Go-Spring!
 ```
 
-**与上一节相比新增了什么能力**：业务对象开始由 Go-Spring 绑定配置和参与容器生命周期。
+这里的 `Hello` 和 `Go-Spring` 都来自字段 tag 中的默认值。
+也就是说，尽管应用仍然使用标准库路由，但业务对象已经进入 Go-Spring 的配置绑定流程了。
 
-## 4. 使用配置文件、环境变量和命令行参数覆盖配置
+## 4. 用外部配置覆盖默认值
 
-**本节目标**：理解配置默认值、配置文件、环境变量和命令行参数的优先级。
+上一章咱们已经把配置绑定关系写进了 `GreetingRoot`，但运行结果还完全依赖 tag 里的默认值。
+真实应用一般不会只靠默认值运行，环境之间的差异常常会放在配置文件、环境变量或启动参数里。
+这一章仍然沿用上一章的代码，代码没有任何变化，只是在示例目录中增加一个配置文件。
 
-**完整示例所在目录**：`examples/04-config-overrides`
-
-**核心代码说明**：
+`GreetingRoot` 仍然绑定同样的两个配置项：
 
 ```go
 type GreetingRoot struct {
@@ -126,86 +179,197 @@ type GreetingRoot struct {
 }
 ```
 
-示例目录包含 `conf/app.properties`：
+但在 `./conf` 目录下新增一个配置文件 [app.properties](examples/04-config-overrides/conf/app.properties)，内容如下：
 
 ```properties
 demo.greeting=Hello from ./conf/app.properties
 demo.audience=config file
 ```
 
-Go-Spring 默认从 `./conf/app.properties`、`./conf/app.yaml` 等文件加载配置。环境变量使用 `GS_` 前缀，例如 `GS_DEMO_AUDIENCE` 会转换成 `demo.audience`。命令行使用 `-Dkey=value`，优先级最高。
+> 完整代码在 [examples/04-config-overrides/main.go](examples/04-config-overrides/main.go)。
 
-**运行方式**：
+使用下面的命令运行示例：
 
 ```bash
 cd examples/04-config-overrides
 go run .
-GS_DEMO_AUDIENCE="env var" go run .
-go run . -Ddemo.audience="cmd arg"
 ```
 
-**预期结果**：
+然后访问 `/hello` 路由：
+
+```bash
+curl http://127.0.0.1:9090/hello
+```
+
+这时响应会从默认值变成配置文件里的值：
 
 ```text
 Hello from ./conf/app.properties, config file!
+```
+
+不改变配置文件的内容，咱们可以用环境变量覆盖其中一个配置项，
+比如 `GS_DEMO_AUDIENCE`，它会映射成 `demo.audience`：
+
+```bash
+GS_DEMO_AUDIENCE="env var" go run .
+curl http://127.0.0.1:9090/hello
+```
+
+执行上面的命令，会看到响应从配置文件里的值变成了环境变量里的值：
+
+```text
 Hello from ./conf/app.properties, env var!
+```
+
+咱们还可以使用命令行参数覆盖配置，写法是 `-Dkey=value`：
+
+```bash
+go run . -Ddemo.audience="cmd arg"
+curl http://127.0.0.1:9090/hello
+```
+
+执行上面的命令，会看到响应从配置文件里的值变成了命令行参数里的值：
+
+```text
 Hello from ./conf/app.properties, cmd arg!
 ```
 
-**与上一节相比新增了什么能力**：配置值不再只来自 tag 默认值，而是可以由运行环境覆盖。
+这一章咱们没有改变任何代码，就让上一章的配置绑定变得更方便运维了。
+不过 `GreetingRoot` 虽然已经可以被 Go-Spring 绑定配置了，但它还是在 `main` 中手动创建的。
 
-## 5. 使用 HTTP 中间件和 `gs.HttpServeMux`
+## 5. 用容器装配 HTTP mux 和中间件
 
-**本节目标**：显式提供 `*gs.HttpServeMux`，接入标准 HTTP 中间件。
+前面几章咱们一直把对象创建和路由注册写在 `main` 函数里，
+虽然适合入门，但是当请求日志、耗时统计、请求 ID、panic recovery 这类横切逻辑出现时，
+HTTP 入口就不应该散落在 `main` 中了。
+因此这一章咱们使用 Go-Spring 来构造所有的组件。
 
-**完整示例所在目录**：`examples/05-http-middleware-mux`
+首先咱们把配置收拢成一个配置结构体。
+注意这里的 tag 不再写 `demo.greeting`，而是写 `greeting` 和 `audience`，
+因为注册构造函数时会指定整体前缀 `${demo}`。
 
-**核心代码说明**：
+代码如下：
+
+```go
+type GreetingConfig struct {
+	Greeting string `value:"${greeting:=Hello}" expr:"$ != ''"`
+	Audience string `value:"${audience:=Go-Spring}" expr:"$ != ''"`
+}
+
+type Controller struct {
+	cfg GreetingConfig
+}
+
+func NewController(cfg GreetingConfig) *Controller {
+	return &Controller{cfg: cfg}
+}
+
+func (c *Controller) Hello(w http.ResponseWriter, r *http.Request) {
+	_, _ = fmt.Fprintf(w, "%s, %s!\n", c.cfg.Greeting, c.cfg.Audience)
+}
+```
+
+然后咱们显式创建一个 `*gs.HttpServeMux`。
+它的内部仍然使用标准库 `http.NewServeMux()`，只是最终返回给 Go-Spring 的是带中间件的 handler。
+
+代码如下：
 
 ```go
 func NewHTTPMux(c *Controller) *gs.HttpServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hello", c.Hello)
-	return &gs.HttpServeMux{Handler: requestID(logging(mux))}
+	return &gs.HttpServeMux{Handler: logging(mux)}
 }
 
+func logging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.Printf("method=%s path=%s elapsed=%s",
+			r.Method, r.URL.Path, time.Since(start))
+	})
+}
+```
+
+这次，咱们在代码中添加了一个 `logging` 中间件，可以记录请求的方法、路径和耗时。
+
+最后咱们把构造函数注册给容器：
+
+```go
 func init() {
 	gs.Provide(NewController, gs.TagArg("${demo}"))
 	gs.Provide(NewHTTPMux)
 }
+
+func main() {
+	gs.Run()
+}
 ```
 
-当应用需要替换默认 `http.DefaultServeMux`，或者要统一包一层请求日志、耗时统计、请求 ID、panic recovery 等中间件时，就需要显式提供 `*gs.HttpServeMux`。
+> 完整代码在 [examples/05-http-middleware-mux/main.go](examples/05-http-middleware-mux/main.go)。
 
-**运行方式**：
+使用下面的命令运行示例：
 
 ```bash
 cd examples/05-http-middleware-mux
 go run .
+```
+
+然后访问 `/hello` 路由：
+
+```bash
 curl -i http://127.0.0.1:9090/hello
 ```
 
-**预期结果**：响应头包含 `X-Request-ID`，控制台打印请求方法、路径、状态码、耗时和 request ID。
+可以看到这次响应变成了下面这样：
 
-**与上一节相比新增了什么能力**：HTTP 入口可以由容器装配，并统一挂载中间件。
+```text
+Hello with middleware, custom mux!
+```
 
-## 6. 多个 bean 的依赖注入
+同时，控制台上还会打印请求的方法、路径和耗时，说明请求确实经过了 `logging` 中间件。
 
-**本节目标**：把单个对象拆成 controller 和 service，并使用构造函数注入。
+这一章咱们完成了一个重要转折：
+`main` 又回到了只负责 `gs.Run()`，对象创建、配置绑定、HTTP mux 组装则统统交给容器。
 
-**完整示例所在目录**：`examples/06-multi-bean-di`
+## 6. 把 controller 和 service 拆成多个 bean
 
-**核心代码说明**：
+上一章咱们已经用容器创建了 controller 和 HTTP mux，但问候语仍然由 controller 自己拼出来。
+随着业务增长，controller 应该更专注于 HTTP 请求和响应，业务逻辑和规则应该放进 service。
+因此这一章咱们新增一个 `GreetingService`，让 controller 通过构造函数依赖 service。
+
+代码如下：
 
 ```go
+type GreetingService struct {
+	Greeting string `value:"${demo.greeting:=Hello}" expr:"$ != ''"`
+}
+
 func NewGreetingService() *GreetingService {
 	return &GreetingService{}
+}
+
+func (s *GreetingService) Message(audience string) string {
+	return fmt.Sprintf("%s, %s!", s.Greeting, audience)
+}
+
+type Controller struct {
+	service  *GreetingService
+	Audience string `value:"${demo.audience:=Go-Spring}" expr:"$ != ''"`
 }
 
 func NewController(service *GreetingService) *Controller {
 	return &Controller{service: service}
 }
 
+func (c *Controller) Hello(w http.ResponseWriter, r *http.Request) {
+	_, _ = fmt.Fprintln(w, c.service.Message(c.Audience))
+}
+```
+
+注册代码也不复杂，只需要多提供一个构造函数：
+
+```go
 func init() {
 	gs.Provide(NewGreetingService)
 	gs.Provide(NewController)
@@ -213,31 +377,142 @@ func init() {
 }
 ```
 
-`Controller` 依赖 `GreetingService`，依赖关系由构造函数声明。controller 仍保留 HTTP 响应所需的配置字段 `demo.audience`。
+> 完整代码在 [examples/06-multi-bean-di/main.go](examples/06-multi-bean-di/main.go)。
 
-**运行方式**：
+使用下面的命令运行示例：
 
 ```bash
 cd examples/06-multi-bean-di
 go run .
+```
+
+然后访问 `/hello` 路由：
+
+```bash
 curl http://127.0.0.1:9090/hello
 ```
 
-**预期结果**：
+可以看到预期中的响应：
 
 ```text
 Hello from service, controller config!
 ```
 
-**与上一节相比新增了什么能力**：对象之间的依赖由 IoC 容器解析，代码更容易测试和替换。
+这一章咱们展示的是构造函数注入。
+`NewController` 的参数声明了它需要 `*GreetingService`，
+Go-Spring 就会先创建 service，再把它传给 controller。
+业务代码不需要自己查找依赖，也不需要在 `main` 中手工组装对象图。
 
-## 7. 使用 `gs.Provide` 注册 Redis 单客户端
+## 7. 注册一个外部客户端 bean
 
-**本节目标**：模仿 starter 的写法，用 `gs.Provide` 注册一个默认 Redis 客户端。
+上一章的 service 内部只有一个字段，但真实服务通常还会依赖 Redis、数据库、消息队列等外部客户端。
+为了让示例聚焦在 Go-Spring 的注册方式上，本章用一个轻量的 `RedisClient` 来模拟外部客户端：
+它会读取配置并打印日志，但不会连接真实的 Redis。
 
-**完整示例所在目录**：`examples/07-redis-single-client`
+首先定义 Redis 配置和客户端构造函数：
 
-**核心代码说明**：
+```go
+type RedisConfig struct {
+	Addr     string `value:"${addr}" expr:"$ != ''"`
+	Password string `value:"${password:=}"`
+}
+
+type RedisClient struct {
+	cfg RedisConfig
+}
+
+func NewRedisClient(cfg RedisConfig) (*RedisClient, error) {
+	log.Printf("create redis client addr=%s", cfg.Addr)
+	return &RedisClient{cfg: cfg}, nil
+}
+
+func CloseRedis(*RedisClient) error {
+	return nil
+}
+
+func (c *RedisClient) Ping(context.Context) error {
+	log.Printf("redis ping addr=%s", c.cfg.Addr)
+	return nil
+}
+```
+
+然后让 service 依赖 `*RedisClient`，并在处理请求时调用它：
+
+```go
+type GreetingService struct {
+	redis    *RedisClient
+	Greeting string `value:"${demo.greeting:=Hello}" expr:"$ != ''"`
+}
+
+func NewGreetingService(redis *RedisClient) *GreetingService {
+	return &GreetingService{redis: redis}
+}
+
+func (s *GreetingService) Message(ctx context.Context, audience string) string {
+	_ = s.redis.Ping(ctx)
+	return fmt.Sprintf("%s, %s!", s.Greeting, audience)
+}
+```
+
+最后咱们需要增加 Redis client 的注册代码：
+
+```go
+func init() {
+	gs.Provide(NewRedisClient, gs.TagArg("${spring.go-redis}")).Destroy(CloseRedis)
+	gs.Provide(NewGreetingService)
+	gs.Provide(NewController)
+	gs.Provide(NewHTTPMux)
+}
+```
+
+注册 Redis client 时：
+- `gs.TagArg("${spring.go-redis}")` 表示构造函数参数 `RedisConfig` 从 `spring.go-redis` 前缀读取配置；
+- `Destroy(CloseRedis)` 表示容器关闭时调用销毁函数。
+
+> 完整代码在 [examples/07-redis-single-client/main.go](examples/07-redis-single-client/main.go)。
+
+咱们还需要在配置文件中增加一个配置项，用于指定 Redis 地址：
+
+```properties
+spring.go-redis.addr=127.0.0.1:6379
+```
+
+使用下面的命令运行示例：
+
+```bash
+cd examples/07-redis-single-client
+go run .
+```
+
+会看到控制台上打印了创建客户端的日志：
+
+```text
+create redis client addr=127.0.0.1:6379
+```
+
+访问 `/hello` 路由：
+
+```bash
+curl http://127.0.0.1:9090/hello
+```
+
+可以看到预期中的响应：
+
+```text
+Hello with Redis, single client!
+```
+
+另外，咱们还能在控制台上看到请求过程中打印出的 `redis ping` 日志。
+虽然这一章的 Redis Client 只是模拟对象，但它的注册方式和真实客户端没有区别：
+配置绑定、依赖注入、资源销毁都交给容器。
+
+## 8. 条件注册和多实例客户端
+
+上一章咱们注册的只有一个 Redis client，所以 service 直接依赖 `*RedisClient` 就够了。
+但真实应用里更常见的是同一种客户端有多个实例，例如默认 Redis、cache Redis、queue Redis。
+如果咱们继续手写多个 `NewRedisClient`，那么注册很快就会变乱，所以这一章咱们引入条件注册、命名 bean 和配置分组。
+
+首先在默认客户端注册的时候增加两个声明：
 
 ```go
 gs.Provide(NewRedisClient, gs.TagArg("${spring.go-redis}")).
@@ -246,100 +521,205 @@ gs.Provide(NewRedisClient, gs.TagArg("${spring.go-redis}")).
 	Name("__default__")
 ```
 
-真实 `starter-go-redis` 使用 go-redis 客户端。为了让示例无需下载额外依赖，这里用标准库实现了一个很小的 Redis PING 客户端，配置结构和注册方式保持接近 starter：从 `spring.go-redis` 绑定配置，命名为 `__default__`，并在配置存在时才启用。
+- `Condition(gs.OnProperty("spring.go-redis.addr"))` 表示只有配置里存在 `spring.go-redis.addr` 时才创建默认客户端。
+- `Name("__default__")` 表示给这个 bean 一个名字，后续同类型实例变多时，注入方就可以明确选择它。
 
-**运行方式**：
-
-```bash
-cd examples/07-redis-single-client
-go run .
-curl http://127.0.0.1:9090/hello
-```
-
-**预期结果**：如果本机 `127.0.0.1:6379` 有 Redis，会看到 `redis=PONG`；没有 Redis 时应用仍能启动，响应会包含 `redis unavailable` 和连接错误。
-
-**与上一节相比新增了什么能力**：service 可以注入外部客户端 bean，并在业务逻辑中使用它。
-
-## 8. 条件化启用与多实例客户端
-
-**本节目标**：参考 `starter-go-redis` 的思路，同时演示单例 client、多实例 client 和条件化启用。
-
-**完整示例所在目录**：`examples/08-conditional-multi-redis`
-
-**核心代码说明**：
+然后注册其他 Redis 实例，不过咱们不需要一条条手写注册，而是交给 `gs.Group`，
+它可以根据配置批量创建多个同类型的实例：
 
 ```go
-gs.Provide(NewRedisClient, gs.TagArg("${spring.go-redis}")).
-	Condition(gs.And(
-		gs.OnProperty("spring.go-redis.enabled").HavingValue("true").MatchIfMissing(),
-		gs.OnProperty("spring.go-redis.addr"),
-	)).
-	Name("__default__")
-
 gs.Group("${spring.go-redis.instances}", NewRedisClient, CloseRedis)
 ```
 
-`gs.OnProperty("spring.go-redis.addr")` 存在时启用默认客户端；`spring.go-redis.enabled=false` 会关闭默认客户端；`gs.Group("${spring.go-redis.instances}", ...)` 会把配置 map 中的每个条目注册为一个命名 bean，例如 `cache`、`queue`。
+咱们需要在配置文件中新增一个 `spring.go-redis.instances` 配置项，它是一个 map，
+键是实例名称，值是实例的配置。
 
-**运行方式**：
+```properties
+spring.go-redis.addr=127.0.0.1:6379
+spring.go-redis.instances.cache.addr=127.0.0.1:6380
+spring.go-redis.instances.queue.addr=127.0.0.1:6381
+```
+
+现在需要对 service 做一些调整，因为现在同类型 `*RedisClient` 有多个注册实例。
+咱们可以通过它字段上的 `autowire` 指定注入名为 `__default__` 的实例：
+
+```go
+type GreetingService struct {
+	Client   *RedisClient `autowire:"__default__?"`
+	Greeting string       `value:"${demo.greeting:=Hello}" expr:"$ != ''"`
+}
+```
+
+> 完整代码在 [examples/08-conditional-multi-redis/main.go](examples/08-conditional-multi-redis/main.go)。
+
+使用下面的命令运行示例：
 
 ```bash
 cd examples/08-conditional-multi-redis
 go run .
-curl http://127.0.0.1:9090/hello
-go run . -Dspring.go-redis.enabled=false
 ```
 
-**预期结果**：默认配置会列出 `default`、`cache`、`queue` 三类客户端状态；关闭 `spring.go-redis.enabled` 后默认客户端显示 disabled，但 `instances` 下的多实例客户端仍会注册。
+然后会看到启动时控制台上打印了 `__default__` 创建的日志，
+但是并没有 `cache` 和 `queue` 创建的日志。
+这是因为 Go-Spring 是按需实例化的，用不到的实例不会被创建。
 
-**与上一节相比新增了什么能力**：Bean 是否存在可以由配置控制，同一类客户端也可以按配置批量创建多个实例。
+访问 `/hello` 路由：
 
-## 9. 日志系统
+```bash
+curl http://127.0.0.1:9090/hello
+```
 
-**本节目标**：使用 Go-Spring 日志系统完成标签注册、标签路由、结构化日志和日志配置。
+可以看到预期中的响应：
 
-**完整示例所在目录**：`examples/09-logging`
+```text
+Hello with conditional Redis, conditional clients!
+```
 
-**核心代码说明**：
+咱们可以修改 service，让它注入 `cache` 实例：
+
+```go
+type GreetingService struct {
+	Client   *RedisClient `autowire:"cache?"`
+	Greeting string       `value:"${demo.greeting:=Hello}" expr:"$ != ''"`
+}
+```
+
+然后会看到启动时只有 `cache` 实例被创建。
+同样的方式，咱们也可以注入 `queue` 实例。
+
+这一章咱们解决的是“同类型多个实例如何管理”的问题。
+`Condition` 可以控制 bean 是否创建，
+`Name` 可以给 bean 命名，
+`autowire` 可以让依赖方选择具体实例，
+`Group` 可以把一组配置批量转换成一组客户端。
+
+## 9. 接入结构化日志
+
+到目前为止，示例已经展示了 HTTP、配置、依赖注入和客户端注册，但日志还只是普通文本。
+真实服务需要更容易检索和关联的日志：业务日志要能标识来源，请求日志要能记录方法、路径和耗时，
+同一次请求中的日志最好带上同一个 request id，等等。
+所以这一章咱们引入 Go-Spring 的日志系统。
+
+首先注册两个日志标签，一个用于业务日志，一个用于 HTTP 访问日志：
 
 ```go
 var (
-	tagBizGreeting = gslog.RegisterBizTag("greeting", "serve")
-	tagHTTP        = gslog.RegisterRPCTag("http", "request")
-	tagRedis       = gslog.RegisterRPCTag("redis", "ping")
-)
-
-gslog.Info(ctx, tagBizGreeting,
-	gslog.Int("client_count", len(s.Clients)),
-	gslog.Msg("building greeting"),
+	tagBizGreeting = log.RegisterBizTag("greeting", "serve")
+	tagHTTPRequest = log.RegisterRPCTag("http", "request")
 )
 ```
 
-示例在启动前通过 `log.RefreshConfig` 加载 logger/appender 配置，把 `_biz_greeting_*`、`_rpc_http_*`、`_rpc_redis_*` 路由到控制台，并使用 `JSONLayout` 输出结构化日志。HTTP 中间件把 request ID 写入 context，日志系统通过 `FieldsFromContext` 自动带上该字段。
+service 中不再使用标准库打印日志，而是使用 Go-Spring 的日志系统记录结构化字段：
 
-**运行方式**：
+```go
+func (s *GreetingService) Summary(ctx context.Context) string {
+	log.Info(ctx, tagBizGreeting,
+		log.String("greeting", s.Greeting),
+		log.Msg("building greeting"),
+	)
+	return s.Greeting + ", structured logs!"
+}
+```
+
+为 HTTP 入口新增一个中间件 `requestID`，它可以从请求头读取或生成 request id。
+对于 request id 这类信息，咱们希望它们能被自动记录到日志中，而不是每次打印日志时手动添加。
+所以，咱们把 request id 放进 context 中，方便日志系统自动提取。
+
+```go
+type requestIDKey struct{}
+
+func NewHTTPMux(c *Controller) *gs.HttpServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/hello", c.Hello)
+	return &gs.HttpServeMux{Handler: requestID(logging(mux))}
+}
+
+func requestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get("X-Request-ID")
+		if id == "" {
+			id = fmt.Sprintf("%d", time.Now().UnixNano())
+		}
+		w.Header().Set("X-Request-ID", id)
+		ctx := context.WithValue(r.Context(), requestIDKey{}, id)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+```
+
+咱们需要给日志系统设置一个上下文提取回调 `log.FieldsFromContext`，
+这样它就可以从 context 中自动提取 request id，然后和其他字段一起被记录下来。
+
+```go
+log.FieldsFromContext = func(ctx context.Context) []log.Field {
+	id, ok := ctx.Value(requestIDKey{}).(string)
+	if !ok || id == "" {
+		return nil
+	}
+	return []log.Field{log.String("request_id", id)}
+}
+```
+
+> 完整代码在 [examples/09-logging/main.go](examples/09-logging/main.go)。
+
+最后咱们在配置文件中添加日志系统的配置，将日志以 JSON 格式输出到控制台。
+
+```properties
+logging.logger.root.type=ConsoleLogger
+logging.logger.root.level=INFO
+logging.logger.root.layout.type=JSONLayout
+logging.logger.root.layout.fileLineMaxLength=30
+```
+
+使用下面的命令运行示例：
 
 ```bash
 cd examples/09-logging
 go run .
-curl -H 'X-Request-ID: demo-1' http://127.0.0.1:9090/hello
 ```
 
-**预期结果**：控制台输出 JSON 日志，包含 `tag`、`request_id`、HTTP 字段、Redis ping 字段和业务字段。没有 Redis 时会看到 `_rpc_redis_ping` 的 warn 日志。
+带上请求 ID 访问 `/hello` 路由：
 
-**与上一节相比新增了什么能力**：日志从普通文本升级为可按标签路由的结构化事件。
+```bash
+curl -H "X-Request-ID: demo-1" http://127.0.0.1:9090/hello
+```
 
-## 10. 单元测试
+可以看到预期中的响应：
 
-**本节目标**：展示纯单元测试、IoC 容器测试、断言和 fake。
+```text
+Hello with logging, structured logs!
+```
 
-**完整示例所在目录**：`examples/10-unit-tests`
+同时可以看到控制台会输出 JSON 日志，包含 tag、request_id、HTTP 方法、路径、耗时和业务字段。
 
-**核心代码说明**：
+```text
+{"level":"info","time":"2026-05-03T08:57:21.525","fileLine":"...mples/09-logging/main.go:29","tag":"_biz_greeting_serve","request_id":"demo-1","greeting":"Hello with logging","msg":"building greeting"}
+{"level":"info","time":"2026-05-03T08:57:21.526","fileLine":"...mples/09-logging/main.go:80","tag":"_rpc_http_request","request_id":"demo-1","method":"GET","path":"/hello","elapsed":"783.125µs","msg":"http request completed"}
+```
+
+这一章的重点不是“打印更多内容”，而是让日志变成结构化事件：
+标签说明事件类型，字段承载可检索数据，context 把一次请求中的公共字段串起来。
+
+## 10. 让组件可以脱离真实服务测试
+
+经过前面的步骤，应用已经具备了一个 Web 服务常见的核心结构：
+HTTP 入口、controller/service 分层、配置绑定、外部客户端和结构化日志。
+还剩最后一个问题：**测试**。
+
+如果 service 直接依赖具体 Redis client，测试时就会很难替换；
+如果测试必须启动真实的 HTTP Server，也会让反馈变慢。
+这一章咱们把依赖改成接口，并使用 Go-Spring 的测试容器验证装配关系。
+
+第一处变化是定义接口，让 service 依赖行为而不是具体实现：
 
 ```go
 type RedisPinger interface {
 	Ping(context.Context) error
+}
+
+type GreetingService struct {
+	redis    RedisPinger
+	Greeting string `value:"${demo.greeting:=Hello}" expr:"$ != ''"`
 }
 
 func NewGreetingService(redis RedisPinger) *GreetingService {
@@ -347,38 +727,127 @@ func NewGreetingService(redis RedisPinger) *GreetingService {
 }
 ```
 
-service 依赖接口，生产环境用 `RedisClient` 实现并通过 `Export(gs.As[RedisPinger]())` 暴露给容器；测试中用 `fakeRedis` 替换。`main_test.go` 包含直接构造 service 的纯单元测试、直接调用 controller 的 HTTP 测试，以及 `gs.Web(false).RunTest` 的 IoC 容器测试。
+生产环境咱们仍然使用 `RedisClient`，不过这次注册时还需要把它导出为 `RedisPinger`：
 
-**运行方式**：
+```go
+gs.Provide(NewRedisClient, gs.TagArg("${spring.go-redis}")).
+	Condition(gs.OnProperty("spring.go-redis.addr")).
+	Destroy(CloseRedis).
+	Export(gs.As[RedisPinger]())
+```
+
+这样一来，咱们就可以在测试代码里用一个很小的 fakeRedis 来替代真实 Redis：
+
+```go
+type fakeRedis struct {
+	err   error
+	calls int
+}
+
+func (f *fakeRedis) Ping(context.Context) error {
+	f.calls++
+	return f.err
+}
+```
+
+有了这个 fakeRedis，service 就可以直接测试了：
+
+```go
+func TestGreetingServiceWithFakeRedis(t *testing.T) {
+	redis := &fakeRedis{}
+	service := &GreetingService{redis: redis, Greeting: "Hi"}
+
+	got := service.Message(context.Background(), "tester")
+	if got != "Hi, tester!" {
+		t.Fatalf("unexpected greeting: %q", got)
+	}
+	if redis.calls != 1 {
+		t.Fatalf("expected one redis ping, got %d", redis.calls)
+	}
+}
+```
+
+对于 controller，咱们也可以不启动真实的 HTTP Server，而是使用 `httptest` 来测试 handler：
+
+```go
+func TestControllerWithFakeRedis(t *testing.T) {
+	service := &GreetingService{redis: &fakeRedis{}, Greeting: "Hi"}
+	controller := &Controller{service: service, Audience: "controller"}
+	req := httptest.NewRequest(http.MethodGet, "/hello", nil)
+	rec := httptest.NewRecorder()
+
+	controller.Hello(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", rec.Code)
+	}
+	if strings.TrimSpace(rec.Body.String()) != "Hi, controller!" {
+		t.Fatalf("unexpected body: %q", rec.Body.String())
+	}
+}
+```
+
+上面都是非常纯粹的 Go 原生单元测试，并没有依赖 Go-Spring 容器。
+如果咱们还想验证 Go-Spring 容器里的装配关系，可以按照下面的步骤进行。
+
+- 首先使用 `gs.Web(false)` 关闭真实的 HTTP Server，
+- 然后使用 `app.Provide(&fakeRedis{}).Export(...)` 把 fakeRedis 注册成接口实现，
+- 最后可以在 `gs.RunTest()` 中注入要检查的对象。
+
+代码如下：
+
+```go
+func TestIoCContainerWithFakeRedis(t *testing.T) {
+	gs.Web(false).Configure(func(app gs.App) {
+		app.Property("spring.app.config.dir", "./testdata/empty-conf")
+		// The built-in Redis client is not enabled
+		app.Provide(&fakeRedis{}).Export(gs.As[RedisPinger]())
+	}).RunTest(t, func(ts *struct {
+		Service    *GreetingService `autowire:""`
+		Controller *Controller      `autowire:""`
+	}) {
+		if ts.Service == nil {
+			t.Fatal("service was not injected")
+		}
+		if ts.Controller == nil {
+			t.Fatal("controller was not injected")
+		}
+		got := ts.Service.Message(context.Background(), "ioc")
+		if got != "Hello, ioc!" {
+			t.Fatalf("unexpected ioc greeting: %q", got)
+		}
+	})
+}
+```
+
+`gs.RunTest()` 在运行的时候会启动完整的 Go-Spring 容器，对 init 注册的对象进行装配。
+它接受一个回调函数，回调函数的参数是一个结构体，用来注入要检查的对象，
+可以使用 `autowire` 和 `value` 标签来注入对象或者配置。
+
+> 完整代码在 [examples/10-unit-tests/main.go](examples/10-unit-tests/main.go)，  
+> 测试代码在 [examples/10-unit-tests/main_test.go](examples/10-unit-tests/main_test.go)。
+
+使用下面的命令运行测试：
 
 ```bash
 cd examples/10-unit-tests
 go test
 ```
 
-**预期结果**：
+可以看到，所有测试都通过了。
 
-```text
-PASS
-ok  	example.com/go-spring-first/10-unit-tests
-```
+这一章把前面所有的能力都落到可测试性上。
+接口让外部依赖可以被 fakeRedis 替换，`Export(gs.As[...])` 让生产实现按接口进入容器，
+`gs.Web(false)` 和 `gs.RunTest()` 让容器装配本身也能被测试。
 
-**与上一节相比新增了什么能力**：业务组件可以脱离真实 Redis 和真实 HTTP Server 进行测试，也可以在 Go-Spring 容器里验证注入关系。
+至此，一个 Go-Spring 应用从最小启动、HTTP 路由、配置绑定、容器装配、外部客户端、条件多实例、
+结构化日志到测试的完整路径就串起来了。
 
-## 示例验证建议
+## 总结
 
-批量检查所有示例：
+从上面十个示例可以看到，Go-Spring 的核心价值并不是要替代 Go 生态中已有的标准库和工具，
+而是提供了一套非常工程化的组织方式：
+把应用启动、配置绑定、对象装配、资源生命周期、日志和测试这些横向能力组织起来。
 
-```bash
-ls examples/*/go.mod
-for d in examples/*; do (cd "$d" && go test ./...); done
-```
-
-启动类示例会阻塞运行，验证启动时可以加命令行覆盖让 HTTP 监听随机端口：
-
-```bash
-cd examples/06-multi-bean-di
-go run . -Dspring.http.server.addr=:0
-```
-
-Redis 示例不要求本机一定有 Redis；没有 Redis 时仍应能编译和启动，访问接口时返回降级提示。
+对于很小的程序，直接使用标准库可能已经足够；
+但当服务规模继续增长时，这些容器和生命周期能力会逐渐体现出价值。

@@ -26,48 +26,32 @@ type Controller struct {
 	Audience string `value:"${demo.audience:=Go-Spring}" expr:"$ != ''"`
 }
 
+// NewController creates a new controller with the given service.
+// The service is injected by Go-Spring.
 func NewController(service *GreetingService) *Controller {
 	return &Controller{service: service}
 }
 
+// Hello is an HTTP handler.
 func (c *Controller) Hello(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintln(w, c.service.Message(c.Audience))
 }
 
+// NewHTTPMux creates a new HTTP mux with the given controller.
 func NewHTTPMux(c *Controller) *gs.HttpServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hello", c.Hello)
-	return &gs.HttpServeMux{Handler: requestID(logging(mux))}
+	// Add logging middleware
+	return &gs.HttpServeMux{Handler: logging(mux)}
 }
 
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
-}
-
-func (r *statusRecorder) WriteHeader(status int) {
-	r.status = status
-	r.ResponseWriter.WriteHeader(status)
-}
-
-func requestID(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := r.Header.Get("X-Request-ID")
-		if id == "" {
-			id = fmt.Sprintf("%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-ID", id)
-		next.ServeHTTP(w, r)
-	})
-}
-
+// logging is a middleware that logs the request method, path, and elapsed time.
 func logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(rec, r)
-		log.Printf("method=%s path=%s status=%d elapsed=%s request_id=%s",
-			r.Method, r.URL.Path, rec.status, time.Since(start), w.Header().Get("X-Request-ID"))
+		next.ServeHTTP(w, r)
+		log.Printf("method=%s path=%s elapsed=%s",
+			r.Method, r.URL.Path, time.Since(start))
 	})
 }
 
@@ -80,3 +64,9 @@ func init() {
 func main() {
 	gs.Run()
 }
+
+// Start it with `go run main.go`.
+// Then try `curl http://127.0.0.1:9090/hello`.
+// It should return `Hello from service, controller config!`.
+// That response is built by the service and called through the controller.
+// Press `Ctrl+C` when you want to stop it.
